@@ -19,10 +19,10 @@ asyncio.set_event_loop(loop)
 def start(update: Update, context: CallbackContext) -> None:
     update.message.reply_text(
         "Hey User! 👋\n"
-        "Welcome to the Telegram Info Bot.\n\n"
+        "Welcome to the Telegram Info Bot. i can access information user id and user mobile number 😎\n\n"
         "Commands you can use:\n"
         "/login - Login to your Telegram account\n"
-        "/help - Get more info about this bot"
+        "/help - Get more info /login after user id commands this bot"
     )
 
 # /help command
