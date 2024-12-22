@@ -1,6 +1,6 @@
 import asyncio
 import logging
-from telegram.ext import Updater, CommandHandler, MessageHandler, Filters, CallbackContext
+from telegram.ext import Updater, CommandHandler, MessageHandler, Filters, CallbackContext, ConversationHandler
 from telegram import Update
 from telethon.sync import TelegramClient
 from telethon.errors import SessionPasswordNeededError
@@ -23,6 +23,9 @@ user_history = {}
 # Setup logging for debugging
 logging.basicConfig(format='%(asctime)s - %(name)s - %(levelname)s - %(message)s', level=logging.DEBUG)
 logger = logging.getLogger(__name__)
+
+# Define states for conversation
+PHONE = 1
 
 # /start command
 def start(update: Update, context: CallbackContext) -> None:
@@ -47,10 +50,21 @@ def help_command(update: Update, context: CallbackContext) -> None:
         "/help - Show this message"
     )
 
-# Async login function
-async def async_login(update: Update, context: CallbackContext) -> None:
+# Request for the phone number (with +91 prefix)
+def phone_number(update: Update, context: CallbackContext) -> int:
+    update.message.reply_text(
+        "Please enter your phone number in the following format:\n"
+        "+91XXXXXXXXXX"
+    )
+    return PHONE
+
+# Async login function after receiving phone number
+async def async_login(update: Update, context: CallbackContext, phone_number: str) -> None:
     global user_logged_in
 
+    # Use the phone number entered by user
+    phone = phone_number
+    
     await client.start()
     
     if not await client.is_user_authorized():
@@ -74,7 +88,11 @@ async def async_login(update: Update, context: CallbackContext) -> None:
 
 # /login command (dispatcher to call async function)
 def login(update: Update, context: CallbackContext) -> None:
-    loop.run_until_complete(async_login(update, context))
+    update.message.reply_text(
+        "To log in, I need your phone number.\n"
+        "Please enter your phone number in the format: +91XXXXXXXXXX"
+    )
+    return PHONE
 
 # Handle forwarded messages and retrieve username history
 def handle_forwarded_message(update: Update, context: CallbackContext) -> None:
@@ -117,6 +135,16 @@ def handle_unauthorized_messages(update: Update, context: CallbackContext) -> No
             "/login - Apne Telegram se connect karein"
         )
 
+# Conversation handler
+def conversation_handler() -> ConversationHandler:
+    return ConversationHandler(
+        entry_points=[CommandHandler('login', login)],  # /login command triggers this conversation
+        states={
+            PHONE: [MessageHandler(Filters.text & ~Filters.command, phone_number)],
+        },
+        fallbacks=[],
+    )
+
 # Main function to run the bot
 def main():
     TOKEN = "YOUR_BOT_TOKEN"  # Replace with your actual bot token
@@ -130,8 +158,10 @@ def main():
     # Command Handlers
     dp.add_handler(CommandHandler("start", start))
     dp.add_handler(CommandHandler("help", help_command))
-    dp.add_handler(CommandHandler("login", login))
-
+    
+    # Handle login process
+    dp.add_handler(conversation_handler())
+    
     # Handle messages that are not commands
     dp.add_handler(MessageHandler(Filters.text & ~Filters.command, handle_unauthorized_messages))
 
