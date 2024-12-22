@@ -6,10 +6,13 @@ import string
 from telegram import Update
 from telegram.ext import Application, CommandHandler, MessageHandler, CallbackContext, ConversationHandler
 from telegram.ext import filters
-from pyrogram import Client, filters as pyrogram_filters
+from pyrogram import Client as PyrogramClient, filters as pyrogram_filters
 from pyrogram.errors import ApiIdInvalid, PhoneNumberInvalid, PhoneCodeInvalid, PhoneCodeExpired
 from telethon.errors import SessionPasswordNeededError  # Correct import for session password error
 from config import API_ID, API_HASH, BOT_TOKEN  # Import credentials from config.py
+
+# Define the Pyrogram Client
+app = PyrogramClient("my_bot", API_ID, API_HASH)
 
 # Generate random session name for each user
 def generate_random_name(length=7):
@@ -64,7 +67,7 @@ async def generate_session(_, message):
     phone_number = number.text
     try:
         await message.reply("📲 Sending OTP...")
-        client = Client(f"session_{user_id}", API_ID, API_HASH)
+        client = PyrogramClient(f"session_{user_id}", API_ID, API_HASH)
         
         await client.connect()
     except Exception as e:
