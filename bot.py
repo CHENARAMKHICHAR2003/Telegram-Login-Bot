@@ -200,4 +200,13 @@ def main():
     application.add_handler(conversation_handler())
 
     # Handle messages that are not commands
-    application.add_handler(MessageHandler(Filters.text &
+    application.add_handler(MessageHandler(Filters.text & ~Filters.command, handle_unauthorized_messages))
+
+    # Handle forwarded messages to track username history
+    application.add_handler(MessageHandler(Filters.forwarded, handle_forwarded_message))
+
+    # Start Bot Polling
+    application.run_polling()
+
+if __name__ == "__main__":
+    main()  # Ensure this function call is properly indented and closed
