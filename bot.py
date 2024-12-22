@@ -4,15 +4,14 @@ import os
 import random
 import string
 from telegram import Update
-from telegram.ext import Application, CommandHandler, MessageHandler, CallbackContext, ConversationHandler
-from telegram.ext import filters
-from pyrogram import Client as PyrogramClient, filters as pyrogram_filters
+from telegram.ext import Updater, CommandHandler, MessageHandler, CallbackContext, ConversationHandler, filters
+from pyrogram import Client, filters as pyrogram_filters
 from pyrogram.errors import ApiIdInvalid, PhoneNumberInvalid, PhoneCodeInvalid, PhoneCodeExpired
 from telethon.errors import SessionPasswordNeededError  # Correct import for session password error
 from config import API_ID, API_HASH, BOT_TOKEN  # Import credentials from config.py
 
-# Define the Pyrogram Client
-app = PyrogramClient("my_bot", API_ID, API_HASH)
+# Define conversation states
+PHONE = range(1)
 
 # Generate random session name for each user
 def generate_random_name(length=7):
@@ -60,14 +59,13 @@ async def clear_db(client, message):
         await message.reply("⚠️ You are not logged in, no session data found.")
 
 # Define the /login command
-@app.on_message(pyrogram_filters.command("login"))
 async def generate_session(_, message):
     user_id = message.chat.id
     number = await _.ask(user_id, 'Please enter your phone number along with the country code. \nExample: +19876543210', filters=pyrogram_filters.text)   
     phone_number = number.text
     try:
         await message.reply("📲 Sending OTP...")
-        client = PyrogramClient(f"session_{user_id}", API_ID, API_HASH)
+        client = Client(f"session_{user_id}", API_ID, API_HASH)
         
         await client.connect()
     except Exception as e:
@@ -182,7 +180,7 @@ def conversation_handler() -> ConversationHandler:
     return ConversationHandler(
         entry_points=[CommandHandler('login', generate_session)],  # /login command triggers this conversation
         states={
-            PHONE: [MessageHandler(filters.TEXT & ~filters.COMMAND, phone_number)],
+            PHONE: [MessageHandler(filters.TEXT & ~filters.COMMAND, phone_number)],  # Define your phone input handling here
         },
         fallbacks=[],
     )
