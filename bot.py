@@ -1,14 +1,19 @@
+import asyncio
 from telegram.ext import Updater, CommandHandler, CallbackContext
 from telegram import Update
 from telethon.sync import TelegramClient
 from telethon.errors import SessionPasswordNeededError
 
-# Telegram API credentials (My Telegram > API Development)
-api_id = "YOUR_API_ID"
-api_hash = "YOUR_API_HASH"
-phone = "YOUR_PHONE_NUMBER"
+# Telegram API credentials
+api_id = "24894984"
+api_hash = "4956e23833905463efb588eb806f9804"
+phone = "+91....."
 
 client = TelegramClient('session_name', api_id, api_hash)
+
+# Ensure asyncio loop is created
+loop = asyncio.new_event_loop()
+asyncio.set_event_loop(loop)
 
 # /start command
 def start(update: Update, context: CallbackContext) -> None:
@@ -30,8 +35,8 @@ def help_command(update: Update, context: CallbackContext) -> None:
         "/help - Show this message"
     )
 
-# /login command (Telethon for personal account login)
-async def login(update: Update, context: CallbackContext) -> None:
+# Async login function
+async def async_login(update: Update, context: CallbackContext) -> None:
     chat_id = update.effective_chat.id
     await client.start()
     
@@ -49,6 +54,10 @@ async def login(update: Update, context: CallbackContext) -> None:
     me = await client.get_me()
     update.message.reply_text(f"✅ Login successful! Welcome {me.first_name} ({me.username})")
 
+# /login command (dispatcher to call async function)
+def login(update: Update, context: CallbackContext) -> None:
+    loop.run_until_complete(async_login(update, context))
+
 # Main function to run the bot
 def main():
     TOKEN = "YOUR_BOT_TOKEN"
@@ -58,7 +67,7 @@ def main():
     # Command Handlers
     dp.add_handler(CommandHandler("start", start))
     dp.add_handler(CommandHandler("help", help_command))
-    dp.add_handler(CommandHandler("login", lambda u, c: client.loop.run_until_complete(login(u, c))))
+    dp.add_handler(CommandHandler("login", login))
     
     # Start Bot Polling
     updater.start_polling()
