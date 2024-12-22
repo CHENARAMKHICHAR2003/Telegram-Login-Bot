@@ -136,28 +136,8 @@ async def password(update: Update, context: CallbackContext):
         return ConversationHandler.END  # End the conversation
 
 # Define the start and help commands for the bot
-async def start(update: Update, context: CallbackContext) -> None:
-    if update.message:
-        await update.message.reply_text(
-            "Hey User! 👋\n"
-            "Welcome to the Telegram Info Bot.\n\n"
-            "Commands you can use:\n"
-            "/login - Login to your Telegram account\n"
-            "/help - Get more info about bot features 🎉\n\n"
-            "Note: \n"
-            "I can help you fetch user IDs and mobile numbers after logging in. "
-            "You can also check your own information after successful login."
-        )
-
-async def help_command(update: Update, context: CallbackContext) -> None:
-    if update.message:
-        await update.message.reply_text(
-            "ℹ️ This bot allows you to access some of your Telegram information.\n\n"
-            "⚙️ Available Commands:\n"
-            "/start - Start the bot\n"
-            "/login - Login to your Telegram account\n"
-            "/help - Show this message"
-        )
+start_handler = CommandHandler("start", start)
+help_handler = CommandHandler("help", help_command)
 
 # Unauthorized message handler (before login)
 async def handle_unauthorized_messages(update: Update, context: CallbackContext) -> None:
@@ -188,27 +168,15 @@ async def logout(update: Update, context: CallbackContext) -> None:
     else:
         await update.message.reply("⚠️ You are not logged in, no session data found to clear.")
 
-# Conversation handler
-def conversation_handler() -> ConversationHandler:
-    return ConversationHandler(
-        entry_points=[CommandHandler('login', phone_number)],  # /login command triggers this conversation
-        states={
-            PHONE: [MessageHandler(filters.TEXT & ~filters.COMMAND, phone_number)],  # Step 1: phone number
-            OTP: [MessageHandler(filters.TEXT & ~filters.COMMAND, otp_code)],  # Step 2: OTP
-            PASSWORD: [MessageHandler(filters.TEXT & ~filters.COMMAND, password)],  # Step 3: Password
-        },
-        fallbacks=[CommandHandler('help', help_command)],  # In case of fallback
-    )
-
 # Main function to run the bot
 def main():
     # Use your bot's token
     application = Application.builder().token(BOT_TOKEN).build()
 
-    application.add_handler(start)
-    application.add_handler(help_command)
-    application.add_handler(conversation_handler())
-    application.add_handler(CommandHandler('logout', logout))  # Add logout command handler
+    application.add_handler(start_handler)  # Add the start command handler
+    application.add_handler(help_handler)  # Add the help command handler
+    application.add_handler(conversation_handler())  # Add the conversation handler for the login flow
+    application.add_handler(CommandHandler('logout', logout))  # Add the logout command handler
 
     # Run the bot
     application.run_polling()
