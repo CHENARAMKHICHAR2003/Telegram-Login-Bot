@@ -4,7 +4,8 @@ import os
 import random
 import string
 from telegram import Update
-from telegram.ext import Updater, CommandHandler, MessageHandler, Filters, CallbackContext, ConversationHandler
+from telegram.ext import CommandHandler, MessageHandler, CallbackContext, ConversationHandler
+from telegram.ext.filters import Filters
 from pyrogram import Client, filters
 from pyrogram.errors import ApiIdInvalid, PhoneNumberInvalid, PhoneCodeInvalid, PhoneCodeExpired
 from telethon.errors import SessionPasswordNeededError  # Correct import for session password error
@@ -186,28 +187,17 @@ def conversation_handler() -> ConversationHandler:
 # Main function to run the bot
 def main():
     # Use your bot's token
-    updater = Updater(BOT_TOKEN)  # BOT_TOKEN from config.py
-    dp = updater.dispatcher
+    application = Application.builder().token(BOT_TOKEN).build()
 
     # Enable logging
     logging.basicConfig(format='%(asctime)s - %(name)s - %(levelname)s - %(message)s', level=logging.DEBUG)
 
     # Command Handlers
-    dp.add_handler(CommandHandler("start", start))
-    dp.add_handler(CommandHandler("help", help_command))
+    application.add_handler(CommandHandler("start", start))
+    application.add_handler(CommandHandler("help", help_command))
 
     # Handle login process
-    dp.add_handler(conversation_handler())
+    application.add_handler(conversation_handler())
 
     # Handle messages that are not commands
-    dp.add_handler(MessageHandler(Filters.text & ~Filters.command, handle_unauthorized_messages))
-
-    # Handle forwarded messages to track username history
-    dp.add_handler(MessageHandler(Filters.forwarded, handle_forwarded_message))
-
-    # Start Bot Polling
-    updater.start_polling()
-    updater.idle()
-
-if __name__ == "__main__":
-    main()
+    application.add_handler(MessageHandler(Filters.text &
