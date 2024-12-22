@@ -1,14 +1,14 @@
 import asyncio
-import json
+import logging
 from telegram.ext import Updater, CommandHandler, MessageHandler, Filters, CallbackContext
 from telegram import Update
 from telethon.sync import TelegramClient
 from telethon.errors import SessionPasswordNeededError
 
 # Telegram API credentials
-api_id = "24894984"
-api_hash = "4956e23833905463efb588eb806f9804"
-phone = "+91...."  # Apna phone number daalein
+api_id = "24894984"  # Replace with your actual API ID
+api_hash = "4956e23833905463efb588eb806f9804"  # Replace with your actual API hash
+phone = "+91..."  # Replace with your phone number
 
 client = TelegramClient('session_name', api_id, api_hash)
 
@@ -19,6 +19,10 @@ asyncio.set_event_loop(loop)
 # Track login status
 user_logged_in = False
 user_history = {}
+
+# Setup logging for debugging
+logging.basicConfig(format='%(asctime)s - %(name)s - %(levelname)s - %(message)s', level=logging.DEBUG)
+logger = logging.getLogger(__name__)
 
 # /start command
 def start(update: Update, context: CallbackContext) -> None:
@@ -46,7 +50,7 @@ def help_command(update: Update, context: CallbackContext) -> None:
 # Async login function
 async def async_login(update: Update, context: CallbackContext) -> None:
     global user_logged_in
-    
+
     await client.start()
     
     if not await client.is_user_authorized():
@@ -100,7 +104,7 @@ def handle_forwarded_message(update: Update, context: CallbackContext) -> None:
 def handle_unauthorized_messages(update: Update, context: CallbackContext) -> None:
     if not user_logged_in:
         update.message.reply_text(
-            "🚫 Pehle login karein! 🔑\n\n"
+            "🚫 Aapko pehle login karna hoga! 🔑\n\n"
             "Aapko /login command ka use karke apne Telegram account se connect karna hoga. "
             "Uske baad hi main aapki madad kar sakta hoon. 😊"
         )
@@ -115,21 +119,25 @@ def handle_unauthorized_messages(update: Update, context: CallbackContext) -> No
 
 # Main function to run the bot
 def main():
-    TOKEN = "YOUR_BOT_TOKEN"
+    TOKEN = "YOUR_BOT_TOKEN"  # Replace with your actual bot token
     updater = Updater(TOKEN)
     dp = updater.dispatcher
-    
+
+    # Enable logging
+    logging.basicConfig(format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+                        level=logging.DEBUG)
+
     # Command Handlers
     dp.add_handler(CommandHandler("start", start))
     dp.add_handler(CommandHandler("help", help_command))
     dp.add_handler(CommandHandler("login", login))
-    
+
     # Handle messages that are not commands
     dp.add_handler(MessageHandler(Filters.text & ~Filters.command, handle_unauthorized_messages))
-    
+
     # Handle forwarded messages to track username history
     dp.add_handler(MessageHandler(Filters.forwarded, handle_forwarded_message))
-    
+
     # Start Bot Polling
     updater.start_polling()
     updater.idle()
