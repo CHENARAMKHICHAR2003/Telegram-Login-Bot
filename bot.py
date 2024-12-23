@@ -146,9 +146,20 @@ async def password(update: Update, context: CallbackContext):
         
         return ConversationHandler.END  # End the conversation
 
-# Define the start and help commands for the bot
-start_handler = CommandHandler("start", start)
-help_handler = CommandHandler("help", help_command)
+# Define the start command
+async def start(update: Update, context: CallbackContext):
+    await update.message.reply(
+        "Welcome! Please use the /login command to start the login process. 😊"
+    )
+
+# Define the help command
+async def help_command(update: Update, context: CallbackContext):
+    await update.message.reply(
+        "Here are the available commands:\n"
+        "/start - Start the bot\n"
+        "/help - Get help information\n"
+        "/login - Connect your Telegram account"
+    )
 
 # Unauthorized message handler (before login)
 async def handle_unauthorized_messages(update: Update, context: CallbackContext) -> None:
@@ -184,10 +195,21 @@ def main():
     # Use your bot's token
     application = Application.builder().token(BOT_TOKEN).build()
 
-    application.add_handler(start_handler)  # Add the start command handler
-    application.add_handler(help_handler)  # Add the help command handler
-    application.add_handler(conversation_handler())  # Add the conversation handler for the login flow
-    application.add_handler(CommandHandler('logout', logout))  # Add the logout command handler
+    application.add_handler(CommandHandler("start", start))  # Add the start command handler
+    application.add_handler(CommandHandler("help", help_command))  # Add the help command handler
+    application.add_handler(CommandHandler("logout", logout))  # Add the logout command handler
+    application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_unauthorized_messages))  # Handle messages before login
+
+    # Add conversation handler (for login flow)
+    conversation_handler = ConversationHandler(
+        entry_points=[CommandHandler('login', phone_number)],
+        states={
+            OTP: [MessageHandler(filters.TEXT & ~filters.COMMAND, otp_code)],
+            PASSWORD: [MessageHandler(filters.TEXT & ~filters.COMMAND, password)],
+        },
+        fallbacks=[],
+    )
+    application.add_handler(conversation_handler)  # Add the login flow handler
 
     # Run the bot
     application.run_polling()
