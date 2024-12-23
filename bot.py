@@ -55,11 +55,13 @@ async def phone_number(update: Update, context: CallbackContext):
         logging.debug(f"User {update.message.chat.id} started the login process.")
         try:
             await update.message.reply(
-                "Please enter your phone number along with the country code. \nExample: +19876543210"
+                "🔐 **Please enter your phone number along with the country code.**\n"
+                "Example: **+19876543210**\n\n"
+                "This is the first step to authenticate you and give access to the bot's features. 💪"
             )
         except AttributeError as e:
             logging.error(f"Error sending message: {e}. Update: {update}")
-            await update.message.reply("An error occurred. Please try again.")
+            await update.message.reply("❌ An error occurred. Please try again.")
         return OTP  # Move to the next step (OTP)
 
 # Step 2: Handle OTP input
@@ -72,16 +74,18 @@ async def otp_code(update: Update, context: CallbackContext):
         context.user_data['phone_number'] = phone_number
 
         try:
-            await update.message.reply("📲 Sending OTP...")
-            
+            await update.message.reply("📲 **Sending OTP...**\nPlease wait while I authenticate you.")
+
             # Start the Pyrogram client
             client = Client(f"session_{user_id}", API_ID, API_HASH)
-            
             await client.connect()
+
+            # Send OTP code
             code = await client.send_code(phone_number)
             context.user_data['code_hash'] = code.phone_code_hash
+
             await update.message.reply(
-                "Please enter the OTP you received (e.g., '12345')."
+                "🔑 **OTP sent!**\n\nPlease enter the **OTP** you received (e.g., '12345')."
             )
             return PASSWORD  # Move to next step for password if needed
         except ApiIdInvalid:
@@ -91,7 +95,7 @@ async def otp_code(update: Update, context: CallbackContext):
             await update.message.reply('❌ Invalid phone number. Please restart the session.')
             return ConversationHandler.END
         except Exception as e:
-            await update.message.reply(f"❌ An error occurred: {e}. Please try again later.")
+            await update.message.reply(f"❌ **An error occurred**: {e}. Please try again later.")
             logging.error(f"Error during OTP request: {e}")
             return ConversationHandler.END
 
@@ -111,28 +115,28 @@ async def password(update: Update, context: CallbackContext):
             await client.connect()
             await client.sign_in(phone_number, phone_code_hash, otp_code)
         except PhoneCodeInvalid:
-            await update.message.reply('❌ Invalid OTP. Please restart the session.')
+            await update.message.reply('❌ Invalid OTP. Please restart the session and try again.')
             logging.error(f"Invalid OTP entered by user {user_id}.")
             return ConversationHandler.END
         except PhoneCodeExpired:
-            await update.message.reply('❌ OTP has expired. Please restart the session.')
+            await update.message.reply('❌ OTP has expired. Please restart the session and try again.')
             logging.error(f"OTP expired for user {user_id}.")
             return ConversationHandler.END
         except Exception as e:
             # Catch any other exceptions and log them
             if "2-step verification" in str(e):
-                await update.message.reply("Your account has 2-step verification enabled. Please enter your password.")
+                await update.message.reply("🔒 **2-Step Verification Enabled!**\n\nPlease enter your **password** to complete the login.")
                 password = update.message.text
                 try:
                     await client.check_password(password)
-                    await update.message.reply("✅ Login successful!")
+                    await update.message.reply("✅ **Login successful!** You are now logged in.")
                     logging.info(f"User {user_id} logged in successfully with password.")
                 except Exception as password_error:
                     await update.message.reply(f"❌ Error: {password_error}. Please restart the session.")
                     logging.error(f"Error during password verification for user {user_id}: {password_error}")
                     return ConversationHandler.END
             else:
-                await update.message.reply(f"❌ An error occurred: {e}. Please try again.")
+                await update.message.reply(f"❌ **An error occurred**: {e}. Please try again.")
                 logging.error(f"Error during sign-in for user {user_id}: {e}")
                 return ConversationHandler.END
 
@@ -174,47 +178,36 @@ async def start(update: Update, context: CallbackContext):
 # Define the help command
 async def help_command(update: Update, context: CallbackContext):
     if 'logged_in' not in context.user_data or not context.user_data['logged_in']:
-        help_message = (
-            "ℹ️ **Help Information**\n\n"
-            "Welcome to the help section! Here are the available commands and what they do:\n\n"
-            "🔑 **/login** - Start the login process to connect your Telegram account.\n"
-            "💬 **/start** - Start the bot and see the welcome message.\n"
-            "🆘 **/help** - Get this help message!\n"
-            "🚪 **/logout** - Log out and clear your session data.\n\n"
-            "📜 **Important Notes:**\n"
-            "1. You **must** log in to access the full functionality of the bot.\n"
-            "2. Once logged in, you can retrieve user information like chat IDs and phone numbers.\n"
-            "3. After logging in, use the **/logout** command to log out and clear your session data.\n"
-            "4. If you face any issues, simply restart the process with **/login**."
+        await update.message.reply(
+            "Here are the available commands:\n"
+            "/start - Start the bot\n"
+            "/help - Get help information\n"
+            "/login - Connect your Telegram account"
         )
-        await update.message.reply(help_message)
     else:
         await update.message.reply(
-            "Here’s some quick info on how to use the bot:\n\n"
-            "🔑 **/login** - Connect your account.\n"
-            "💬 **/start** - Start the bot and see the welcome message.\n"
-            "🆘 **/help** - Access help anytime.\n"
-            "🚪 **/logout** - Log out and clear session data."
+            "Here are the available commands:\n"
+            "/start - Start the bot\n"
+            "/help - Get help information\n"
+            "/logout - Log out and clear your session data"
         )
 
 # Unauthorized message handler (before login)
 async def handle_unauthorized_messages(update: Update, context: CallbackContext) -> None:
     if 'logged_in' not in context.user_data or not context.user_data['logged_in']:
-        if update.message:
-            await update.message.reply_text(
-                "🚫 You need to log in first! 🔑\n\n"
-                "Use the /login command to connect to your Telegram account. "
-                "After logging in, I can assist you further. 😊"
-            )
+        await update.message.reply(
+            "🚫 **You need to log in first!** 🔑\n\n"
+            "Use the **/login** command to connect to your Telegram account. "
+            "After logging in, I can assist you further. 😊"
+        )
     else:
-        if update.message:
-            await update.message.reply_text(
-                "❓ I didn't understand that. Please use a valid command.\n\n"
-                "Available Commands:\n"
-                "/start - Start the bot\n"
-                "/help - Help info\n"
-                "/login - Connect your Telegram account"
-            )
+        await update.message.reply(
+            "❓ I didn't understand that. Please use a valid command.\n\n"
+            "Available Commands:\n"
+            "/start - Start the bot\n"
+            "/help - Help info\n"
+            "/login - Connect your Telegram account"
+        )
 
 # Logout handler to delete session files
 async def logout(update: Update, context: CallbackContext) -> None:
@@ -222,7 +215,8 @@ async def logout(update: Update, context: CallbackContext) -> None:
     files_deleted = await delete_session_files(user_id)
 
     if files_deleted:
-        await update.message.reply("✅ Your session data and files have been cleared.")
+        await update.message.reply("✅ **Your session data and files have been cleared.**")
+        context.user_data['logged_in'] = False
     else:
         await update.message.reply("⚠️ You are not logged in, no session data found to clear.")
 
@@ -247,6 +241,7 @@ def main():
     )
     application.add_handler(conversation_handler)  # Add the login flow handler
 
+    # Run the bot
     application.run_polling()
 
 if __name__ == '__main__':
