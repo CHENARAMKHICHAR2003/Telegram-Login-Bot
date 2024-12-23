@@ -1,7 +1,7 @@
 import random
 import time
 from telegram import Update
-from telegram.ext import Updater, CommandHandler, MessageHandler, Filters, CallbackContext
+from telegram.ext import Updater, CommandHandler, MessageHandler, filters, CallbackContext
 import logging
 
 # Enable logging to help track errors
@@ -184,9 +184,9 @@ def main():
     dp.add_handler(CommandHandler("cancel", cancel_login))  # Cancel login command
 
     # Messages (Handle phone number, OTP, PIN)
-    dp.add_handler(MessageHandler(Filters.text & ~Filters.command, verify_phone_number))
-    dp.add_handler(MessageHandler(Filters.text & ~Filters.command, verify_otp))
-    dp.add_handler(MessageHandler(Filters.text & ~Filters.command, verify_pin))
+    dp.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, verify_phone_number))
+    dp.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, verify_otp))
+    dp.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, verify_pin))
 
     # Start polling
     updater.start_polling()
