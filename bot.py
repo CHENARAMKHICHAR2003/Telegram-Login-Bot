@@ -148,18 +148,43 @@ async def password(update: Update, context: CallbackContext):
 
 # Define the start command
 async def start(update: Update, context: CallbackContext):
-    await update.message.reply(
-        "Welcome! Please use the /login command to start the login process. 😊"
+    user_id = update.message.chat.id
+    first_name = update.message.from_user.first_name
+    username = update.message.from_user.username if update.message.from_user.username else "No Username"
+    
+    # Stylish message with helpful instructions
+    message = (
+        f"👋 Hello {first_name}! Welcome to the bot! 😊\n\n"
+        "🔑 To access any features, including retrieving user chat IDs and phone numbers, "
+        "you **must log in** first. Please use the **/login** command to start the process.\n\n"
+        "Once you're logged in, you can use the following commands:\n"
+        "💬 **/start** - Start the bot and see this message.\n"
+        "🆘 **/help** - Get detailed help information.\n"
+        "🔐 **/login** - Connect your Telegram account (mandatory to use all features).\n"
+        "🚪 **/logout** - Log out and clear your session data.\n\n"
+        "⚠️ **Important:** Without logging in, I cannot fetch other users' information such as their chat ID or phone number.\n\n"
+        "Use the **/login** command now to proceed and unlock the bot's features! 💪"
     )
+    
+    await update.message.reply_text(message)
 
 # Define the help command
 async def help_command(update: Update, context: CallbackContext):
-    await update.message.reply(
-        "Here are the available commands:\n"
-        "/start - Start the bot\n"
-        "/help - Get help information\n"
-        "/login - Connect your Telegram account"
+    # Stylish and detailed help message
+    help_message = (
+        "ℹ️ **Help Information**\n\n"
+        "Welcome to the help section! Here are the available commands and what they do:\n\n"
+        "🔑 **/login** - Start the login process to connect your Telegram account.\n"
+        "💬 **/start** - Start the bot and see the welcome message.\n"
+        "🆘 **/help** - Get this help message!\n"
+        "🚪 **/logout** - Log out and clear your session data.\n\n"
+        "📜 **Important Notes:**\n"
+        "1. You **must** log in to access the full functionality of the bot.\n"
+        "2. Once logged in, you can retrieve user information like chat IDs and phone numbers.\n"
+        "3. After logging in, use the **/logout** command to log out and clear your session data.\n"
+        "4. If you face any issues, simply restart the process with **/login**."
     )
+    await update.message.reply_text(help_message)
 
 # Unauthorized message handler (before login)
 async def handle_unauthorized_messages(update: Update, context: CallbackContext) -> None:
