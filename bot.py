@@ -1,7 +1,7 @@
 import random
 import time
 from telegram import Update
-from telegram.ext import Updater, CommandHandler, MessageHandler, filters, CallbackContext
+from telegram.ext import Application, CommandHandler, MessageHandler, filters, CallbackContext
 import logging
 
 # Enable logging to help track errors
@@ -17,9 +17,9 @@ user_pins = {}      # Stores PINs for second verification
 # List of authorized users by their Telegram user IDs (You can manually add IDs)
 AUTHORIZED_USERS = {123456789, 987654321}  # Example user IDs
 
-def start(update: Update, context: CallbackContext) -> None:
+async def start(update: Update, context: CallbackContext) -> None:
     """Handle /start command."""
-    update.message.reply_text(
+    await update.message.reply_text(
         "*Welcome to the Power Bot! 💥*\n\n"
         "With this bot, you can access powerful capabilities like:\n\n"
         "1. Retrieve user IDs of anyone who interacts with the bot. 🕵️‍♂️\n"
@@ -31,9 +31,9 @@ def start(update: Update, context: CallbackContext) -> None:
         parse_mode='Markdown'
     )
 
-def help_command(update: Update, context: CallbackContext) -> None:
+async def help_command(update: Update, context: CallbackContext) -> None:
     """Handle /help command."""
-    update.message.reply_text(
+    await update.message.reply_text(
         "*Here are the available commands:* 😎\n\n"
         "1. `/start` - Start the bot and get a welcome message.\n"
         "2. `/login` - Begin the secure login process.\n"
@@ -43,30 +43,30 @@ def help_command(update: Update, context: CallbackContext) -> None:
         parse_mode='Markdown'
     )
 
-def logout(update: Update, context: CallbackContext) -> None:
+async def logout(update: Update, context: CallbackContext) -> None:
     """Handle /logout command."""
     user_id = update.effective_user.id
 
     if user_id in user_sessions:
         del user_sessions[user_id]
-        update.message.reply_text(
+        await update.message.reply_text(
             "*You have been logged out successfully!* 🚪👋\n\n"
             "To start a new session, use the `/login` command.",
             parse_mode='Markdown'
         )
     else:
-        update.message.reply_text(
+        await update.message.reply_text(
             "You're not logged in. Use `/login` to start the process.",
             parse_mode='Markdown'
         )
 
-def login(update: Update, context: CallbackContext) -> None:
+async def login(update: Update, context: CallbackContext) -> None:
     """Handle /login command."""
     user_id = update.effective_user.id
     
     # Check if the user is authorized
     if user_id not in AUTHORIZED_USERS:
-        update.message.reply_text(
+        await update.message.reply_text(
             "*You are not authorized to use this bot.* 🚫\n"
             "Please contact the administrator to gain access.",
             parse_mode='Markdown'
@@ -75,12 +75,12 @@ def login(update: Update, context: CallbackContext) -> None:
     
     # Initiate the login process
     user_sessions[user_id] = {"step": 1}  # Step 1: Enter phone number
-    update.message.reply_text(
+    await update.message.reply_text(
         "*Step 1:* 📞 Please enter your phone number (e.g., +1234567890):",
         parse_mode='Markdown'
     )
 
-def verify_phone_number(update: Update, context: CallbackContext) -> None:
+async def verify_phone_number(update: Update, context: CallbackContext) -> None:
     """Verify the phone number entered by the user."""
     user_id = update.effective_user.id
     
@@ -98,20 +98,20 @@ def verify_phone_number(update: Update, context: CallbackContext) -> None:
         user_sessions[user_id]["step"] = 2  # Move to next step (OTP)
 
         # Send OTP to user
-        update.message.reply_text(
+        await update.message.reply_text(
             f"✅ OTP has been sent to your number: *{phone_number}*.\n\n"
             "*Step 2:* 🔒 Please enter the OTP to continue.",
             parse_mode='Markdown'
         )
 
     else:
-        update.message.reply_text(
+        await update.message.reply_text(
             "*Invalid phone number.* 🚫\n"
             "Please enter a valid phone number (e.g., +1234567890):",
             parse_mode='Markdown'
         )
 
-def verify_otp(update: Update, context: CallbackContext) -> None:
+async def verify_otp(update: Update, context: CallbackContext) -> None:
     """Verify the OTP entered by the user."""
     user_id = update.effective_user.id
     
@@ -123,17 +123,17 @@ def verify_otp(update: Update, context: CallbackContext) -> None:
     # Check if OTP matches
     if otp_storage.get(user_id) == int(entered_otp):
         user_sessions[user_id]["step"] = 3  # Move to next step (PIN)
-        update.message.reply_text(
+        await update.message.reply_text(
             "🔑 OTP verified successfully! Now, *enter your PIN* to complete the login process.",
             parse_mode='Markdown'
         )
     else:
-        update.message.reply_text(
+        await update.message.reply_text(
             "*Invalid OTP.* ❌\nPlease try again.",
             parse_mode='Markdown'
         )
 
-def verify_pin(update: Update, context: CallbackContext) -> None:
+async def verify_pin(update: Update, context: CallbackContext) -> None:
     """Verify the PIN entered by the user."""
     user_id = update.effective_user.id
     
@@ -147,23 +147,23 @@ def verify_pin(update: Update, context: CallbackContext) -> None:
 
     if pin == correct_pin:
         user_sessions[user_id]["step"] = 4  # User is successfully logged in
-        update.message.reply_text(
+        await update.message.reply_text(
             f"🎉 *Login successful!* Welcome, {update.effective_user.first_name}. 🙌\n"
             "You're now logged in and can start using the bot.",
             parse_mode='Markdown'
         )
     else:
-        update.message.reply_text(
+        await update.message.reply_text(
             "*Invalid PIN.* ❌\nPlease try again.",
             parse_mode='Markdown'
         )
 
-def cancel_login(update: Update, context: CallbackContext) -> None:
+async def cancel_login(update: Update, context: CallbackContext) -> None:
     """Cancel the login process and reset user session."""
     user_id = update.effective_user.id
     if user_id in user_sessions:
         del user_sessions[user_id]
-    update.message.reply_text(
+    await update.message.reply_text(
         "*Login process cancelled.* 🚫\n"
         "To restart the process, use `/login`.",
         parse_mode='Markdown'
@@ -172,25 +172,22 @@ def cancel_login(update: Update, context: CallbackContext) -> None:
 def main():
     """Start the bot and set up handlers."""
     # Replace 'YOUR_BOT_TOKEN' with your actual Telegram bot token
-    updater = Updater("YOUR_BOT_TOKEN", use_context=True)
+    application = Application.builder().token("YOUR_BOT_TOKEN").build()
     
-    dp = updater.dispatcher
-
     # Commands
-    dp.add_handler(CommandHandler("start", start))
-    dp.add_handler(CommandHandler("help", help_command))
-    dp.add_handler(CommandHandler("logout", logout))
-    dp.add_handler(CommandHandler("login", login))
-    dp.add_handler(CommandHandler("cancel", cancel_login))  # Cancel login command
+    application.add_handler(CommandHandler("start", start))
+    application.add_handler(CommandHandler("help", help_command))
+    application.add_handler(CommandHandler("logout", logout))
+    application.add_handler(CommandHandler("login", login))
+    application.add_handler(CommandHandler("cancel", cancel_login))  # Cancel login command
 
     # Messages (Handle phone number, OTP, PIN)
-    dp.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, verify_phone_number))
-    dp.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, verify_otp))
-    dp.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, verify_pin))
+    application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, verify_phone_number))
+    application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, verify_otp))
+    application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, verify_pin))
 
     # Start polling
-    updater.start_polling()
-    updater.idle()
+    application.run_polling()
 
 if __name__ == '__main__':
     main()
